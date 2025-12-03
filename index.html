@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#4F46E5">
+    <title>AI Dev Dashboard</title>
+    <link rel="manifest" href="data:application/json;base64,eyJuYW1lIjoiQUkgRGV2IERhc2hib2FyZCIsInNob3J0X25hbWUiOiJBSSBEZXYiLCJzdGFydF91cmwiOiIuIiwiZGlzcGxheSI6InN0YW5kYWxvbmUiLCJiYWNrZ3JvdW5kX2NvbG9yIjoiI2ZmZmZmZiIsInRoZW1lX2NvbG9yIjoiIzRGNDZFNSIsImljb25zIjpbeyJzcmMiOiJkYXRhOmltYWdlL3N2Zyt4bWw7YmFzZTY0LFBITjJaeUI0Yld4dWN6MGlhSFIwY0RvdkwzZDNkeTUzTXk1dmNtY3ZNakF3TUM5emRtY2lJSGRwWkhSb1BTSXhNakFpSUdobGFXZG9kRDBpTVRJd0lqNDhjbVZqZENCM2FXUjBhRDBpTVRJd0lpQm9aV2xuYUhROUlqRXlNQ0lnWm1sc2JEMGlJelJHTkRaRk5TSXZQand2YzNablBnPT0iLCJzaXplcyI6IjEyMHgxMjAiLCJ0eXBlIjoiaW1hZ2Uvc3ZnK3htbCJ9XX0=">
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100">
+    <div id="app"></div>
+
+    <script type="module">
+        // STATE
+        let view = localStorage.getItem('setupDone') ? 'chat' : 'setup';
+        let messages = JSON.parse(localStorage.getItem('messages') || '[]');
+        let projects = JSON.parse(localStorage.getItem('projects') || '[]');
+        let input = '';
+        let sending = false;
+
+        const geminiKey = () => localStorage.getItem('geminiKey') || '';
+        const githubToken = () => localStorage.getItem('githubToken') || '';
+
+        // RENDER
+        function render() {
+            const app = document.getElementById('app');
+            
+            if (view === 'setup') {
+                app.innerHTML = `
+                    <div class="min-h-screen bg-gradient-to-br from-purple-900 to-indigo-900 p-4 flex items-center justify-center">
+                        <div class="max-w-md w-full bg-white rounded-lg shadow-2xl p-6">
+                            <h1 class="text-3xl font-bold text-center mb-6 text-gray-800">⚙️ Setup</h1>
+                            
+                            <div class="mb-4">
+                                <label class="block font-bold mb-2">🤖 Gemini API Key</label>
+                                <input type="text" id="geminiKey" value="${geminiKey()}" 
+                                    class="w-full p-3 border rounded" placeholder="Inserisci Gemini Key">
+                            </div>
+
+                            <div class="mb-6">
+                                <label class="block font-bold mb-2">🐙 GitHub Token</label>
+                                <input type="text" id="githubToken" value="${githubToken()}" 
+                                    class="w-full p-3 border rounded" placeholder="Inserisci GitHub Token">
+                            </div>
+
+                            <button onclick="window.saveSetup()" 
+                                class="w-full bg-indigo-600 text-white p-3 rounded font-bold hover:bg-indigo-700">
+                                💾 Salva e Inizia
+                            </button>
+
+                            <div class="mt-6 p-4 bg-yellow-50 rounded text-sm">
+                                <p class="font-bold mb-2">📋 Ottieni le chiavi:</p>
+                                <p class="mb-1">• Gemini: <a href="https://aistudio.google.com/apikey" target="_blank" class="text-blue-600">aistudio.google.com/apikey</a></p>
+                                <p>• GitHub: <a href="https://github.com/settings/tokens" target="_blank" class="text-blue-600">github.com/settings/tokens</a></p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            } else {
+                app.innerHTML = `
+                    <nav class="bg-indigo-600 text-white p-4">
+                        <div class="flex justify-between items-center flex-wrap gap-2">
+                            <h1 class="text-xl font-bold">🤖 AI Dev Dashboard</h1>
+                            <div class="flex gap-2">
+                                <button onclick="window.changeView('chat')" 
+                                    class="px-4 py-2 rounded ${view === 'chat' ? 'bg-indigo-800' : 'bg-indigo-700'}">💬</button>
+                                <button onclick="window.changeView('projects')" 
+                                    class="px-4 py-2 rounded ${view === 'projects' ? 'bg-indigo-800' : 'bg-indigo-700'}">📁</button>
+                                <button onclick="window.changeView('setup')" 
+                                    class="px-4 py-2 rounded ${view === 'setup' ? 'bg-indigo-800' : 'bg-indigo-700'}">⚙️</button>
+                            </div>
+                        </div>
+                    </nav>
+
+                    <div class="max-w-4xl mx-auto p-4">
+                        ${view === 'chat' ? renderChat() : renderProjects()}
+                    </div>
+                `;
+            }
+        }
+
+        function renderChat() {
+            return `
+                <div class="bg-white rounded-lg shadow-lg p-4 mb-4" style="height: 60vh; overflow-y: auto" id="chatBox">
+                    ${messages.length === 0 ? `
+                        <div class="text-center text-gray-500 mt-20">
+                            <p class="text-4xl mb-4">👋</p>
+                            <p class="text-xl">Inizia a chattare con Gemini AI!</p>
+                            <p class="text-sm mt-2">Chiedi di generare codice, creare app, ecc.</p>
+                        </div>
+                    ` : messages.map(msg => `
+                        <div class="mb-4 ${msg.role === 'user' ? 'text-right' : 'text-left'}">
+                            <div class="inline-block p-3 rounded-lg max-w-md ${msg.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-gray-200'}">
+                                <pre class="whitespace-pre-wrap text-sm font-mono">${escapeHtml(msg.content)}</pre>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+
+                <div class="flex gap-2 mb-4">
+                    <input type="text" id="chatInput" value="${input}" 
+                        placeholder="Scrivi il tuo messaggio..." 
+                        class="flex-1 p-3 border rounded text-lg"
+                        ${sending ? 'disabled' : ''}
+                        onkeypress="if(event.key==='Enter') window.sendMessage()">
+                    <button onclick="window.sendMessage()" ${sending ? 'disabled' : ''}
+                        class="bg-indigo-600 text-white px-6 py-3 rounded hover:bg-indigo-700 disabled:bg-gray-400 text-2xl">
+                        ${sending ? '⏳' : '📤'}
+                    </button>
+                </div>
+
+                ${messages.length > 0 && messages[messages.length - 1].role === 'assistant' ? `
+                    <button onclick="window.createRepo()" 
+                        class="w-full bg-green-600 text-white p-4 rounded hover:bg-green-700 font-bold text-lg">
+                        🚀 Crea Repository GitHub
+                    </button>
+                ` : ''}
+            `;
+        }
+
+        function renderProjects() {
+            return `
+                <h2 class="text-2xl font-bold mb-4">📁 I Tuoi Progetti</h2>
+                ${projects.length === 0 ? `
+                    <div class="bg-white p-12 rounded-lg shadow text-center text-gray-500">
+                        <p class="text-6xl mb-4">📭</p>
+                        <p class="text-xl mb-2">Nessun progetto ancora</p>
+                        <p class="text-sm">Crea una repository dalla chat!</p>
+                    </div>
+                ` : projects.map((proj, i) => `
+                    <div class="bg-white p-4 rounded-lg shadow mb-4">
+                        <h3 class="font-bold text-lg mb-2">📦 ${escapeHtml(proj.name)}</h3>
+                        <a href="${proj.repoUrl}" target="_blank" class="text-indigo-600 hover:underline block mb-2">
+                            🔗 ${proj.repoUrl}
+                        </a>
+                        <p class="text-sm text-gray-500 mb-2">${new Date(proj.createdAt).toLocaleString('it-IT')}</p>
+                        <button onclick="window.deleteProject(${i})" class="text-red-600 hover:underline text-sm">
+                            🗑️ Elimina
+                        </button>
+                    </div>
+                `).join('')}
+            `;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // FUNCTIONS
+        window.saveSetup = () => {
+            const gKey = document.getElementById('geminiKey').value;
+            const ghToken = document.getElementById('githubToken').value;
+
+            if (!gKey || !ghToken) {
+                alert('❌ Compila entrambi i campi!');
+                return;
+            }
+
+            localStorage.setItem('geminiKey', gKey);
+            localStorage.setItem('githubToken', ghToken);
+            localStorage.setItem('setupDone', 'true');
+            
+            view = 'chat';
+            render();
+            alert('✅ Setup completato!');
+        };
+
+        window.changeView = (newView) => {
+            view = newView;
+            render();
+        };
+
+        window.sendMessage = async () => {
+            const inputEl = document.getElementById('chatInput');
+            if (!inputEl) return;
+            
+            const text = inputEl.value.trim();
+            if (!text) return;
+
+            const gKey = geminiKey();
+            if (!gKey) {
+                alert('❌ Inserisci Gemini API Key nelle impostazioni!');
+                view = 'setup';
+                render();
+                return;
+            }
+
+            sending = true;
+            messages.push({ role: 'user', content: text, timestamp: Date.now() });
+            localStorage.setItem('messages', JSON.stringify(messages));
+            input = '';
+            render();
+
+            try {
+                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${gKey}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text }] }]
+                    })
+                });
+
+                const data = await response.json();
+                
+                if (data.error) {
+                    throw new Error(data.error.message || 'Errore API');
+                }
+                
+                const aiText = data.candidates?.[0]?.content?.parts?.[0]?.text || 'Errore nella risposta';
+                
+                messages.push({ role: 'assistant', content: aiText, timestamp: Date.now() });
+                localStorage.setItem('messages', JSON.stringify(messages));
+            } catch (error) {
+                alert('❌ Errore Gemini: ' + error.message);
+                messages.push({ role: 'assistant', content: '❌ Errore: ' + error.message, timestamp: Date.now() });
+                localStorage.setItem('messages', JSON.stringify(messages));
+            }
+
+            sending = false;
+            render();
+            
+            setTimeout(() => {
+                const chatBox = document.getElementById('chatBox');
+                if (chatBox) chatBox.scrollTop = chatBox.scrollHeight;
+            }, 100);
+        };
+
+        window.createRepo = async () => {
+            const name = prompt('📝 Nome repository:');
+            if (!name) return;
+
+            const ghToken = githubToken();
+            if (!ghToken) {
+                alert('❌ Inserisci GitHub Token nelle impostazioni!');
+                view = 'setup';
+                render();
+                return;
+            }
+
+            const lastMessage = messages[messages.length - 1];
+            const code = lastMessage?.role === 'assistant' ? lastMessage.content : '';
+
+            try {
+                const response = await fetch('https://api.github.com/user/repos', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `token ${ghToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        name: name,
+                        description: 'Created with AI Dev Dashboard',
+                        private: false,
+                        auto_init: true
+                    })
+                });
+
+                const repo = await response.json();
+                
+                if (repo.html_url) {
+                    projects.unshift({
+                        name: name,
+                        repoUrl: repo.html_url,
+                        code: code,
+                        createdAt: Date.now()
+                    });
+                    localStorage.setItem('projects', JSON.stringify(projects));
+                    alert('✅ Repository creata!\n\n' + repo.html_url);
+                    view = 'projects';
+                    render();
+                } else {
+                    alert('❌ Errore GitHub: ' + (repo.message || JSON.stringify(repo)));
+                }
+            } catch (error) {
+                alert('❌ Errore: ' + error.message);
+            }
+        };
+
+        window.deleteProject = (index) => {
+            if (confirm('🗑️ Eliminare questo progetto?')) {
+                projects.splice(index, 1);
+                localStorage.setItem('projects', JSON.stringify(projects));
+                render();
+            }
+        };
+
+        // INIT
+        render();
+
+        // SERVICE WORKER
+        if ('serviceWorker' in navigator) {
+            const swCode = `
+                self.addEventListener('install', e => self.skipWaiting());
+                self.addEventListener('activate', e => e.waitUntil(clients.claim()));
+                self.addEventListener('fetch', e => e.respondWith(fetch(e.request)));
+            `;
+            const blob = new Blob([swCode], { type: 'application/javascript' });
+            const swUrl = URL.createObjectURL(blob);
+            navigator.serviceWorker.register(swUrl);
+        }
+    </script>
+</body>
+</html>
